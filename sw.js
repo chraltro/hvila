@@ -3,7 +3,7 @@
  * Provides offline functionality and caching
  */
 
-const CACHE_NAME = 'hvila-v4-ultimate';
+const CACHE_NAME = 'hvila-v5';
 const STATIC_CACHE_URLS = [
     './',
     './index.html',
@@ -12,7 +12,8 @@ const STATIC_CACHE_URLS = [
     './js/app.js',
     './manifest.json',
     './icons/logo.svg',
-    './wayfinder_logo.svg'
+    './wayfinder_logo.svg',
+    './bell.wav'
 ];
 
 // Install event - cache static assets
@@ -91,24 +92,6 @@ self.addEventListener('fetch', (event) => {
     );
 });
 
-// Background sync for saving user data
-self.addEventListener('sync', (event) => {
-    if (event.tag === 'background-sync') {
-        console.log('[SW] Background sync triggered');
-        event.waitUntil(doBackgroundSync());
-    }
-});
-
-async function doBackgroundSync() {
-    try {
-        // Perform any background tasks here
-        // For example, sync user stats with a server
-        console.log('[SW] Background sync completed');
-    } catch (error) {
-        console.error('[SW] Background sync failed:', error);
-    }
-}
-
 // Push notification handling
 self.addEventListener('push', (event) => {
     if (!event.data) return;
@@ -141,21 +124,22 @@ self.addEventListener('push', (event) => {
 // Notification click handling
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
-    
-    if (event.action === 'start') {
-        // Open the app and start timer
-        event.waitUntil(
-            clients.openWindow('./?action=start')
-        );
-    } else if (event.action === 'dismiss') {
-        // Just close the notification
-        return;
-    } else {
-        // Default action - open the app
-        event.waitUntil(
-            clients.openWindow('./')
-        );
-    }
+
+    if (event.action === 'dismiss') return;
+
+    const targetUrl = event.action === 'start' ? './?action=start' : './';
+
+    event.waitUntil(
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+            // Focus an existing window if one exists
+            for (const client of windowClients) {
+                if (client.url.includes(self.registration.scope) && 'focus' in client) {
+                    return client.focus();
+                }
+            }
+            return clients.openWindow(targetUrl);
+        })
+    );
 });
 
 // Message handling from main thread

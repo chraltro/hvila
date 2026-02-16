@@ -1,18 +1,4 @@
-/* Main container */
-.container {
-    background: var(--bg-secondary);
-    border-radius: 20px;
-    padding: 40px 30px;
-    width: 100%;
-    max-width: 420px;
-    box-shadow: 0 0 0 1px var(--border-primary),
-                0 10px 40px var(--shadow-primary);
-    position: relative;
-    overflow: hidden;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    z-index: 1;
-}/* Reset and base styles */
+/* Reset and base styles */
 * {
     margin: 0;
     padding: 0;
@@ -99,6 +85,22 @@ body {
     touch-action: manipulation;
     position: relative;
     overflow: hidden;
+}
+
+/* Main container */
+.container {
+    background: var(--bg-secondary);
+    border-radius: 20px;
+    padding: 40px 30px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 0 0 1px var(--border-primary),
+                0 10px 40px var(--shadow-primary);
+    position: relative;
+    overflow: hidden;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    z-index: 1;
 }
 
 /* Animated background layers */
@@ -238,6 +240,8 @@ body.phase-longBreak::before {
         filter: hue-rotate(30deg) brightness(1);
     }
 }
+
+@keyframes gentleDrift {
     0% {
         transform: translateX(0) translateY(0);
         opacity: 0.8;
@@ -517,6 +521,26 @@ button.primary:focus {
 
 .notification.show {
     transform: translateX(-50%) translateY(0);
+}
+
+.notification-action {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 5px 12px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+    color: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: background 0.2s ease;
+}
+
+.notification-action:hover {
+    background: rgba(0, 0, 0, 0.3);
 }
 
 /* Animations */
