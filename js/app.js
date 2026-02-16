@@ -990,14 +990,21 @@ class ReliefTimer {
         // Show install notification
         const notification = document.getElementById('notification');
         if (notification) {
-            notification.innerHTML = `
-                Install Hvila for offline use
-                <button id="installBtn" style="margin-left: 10px; padding: 5px 10px; cursor: pointer;">Install</button>
-                <button id="dismissInstall" style="margin-left: 5px; padding: 5px 10px; cursor: pointer;">Dismiss</button>
-            `;
+            notification.textContent = '';
+
+            const text = document.createTextNode('Install Hvila for offline use ');
+            const installBtn = document.createElement('button');
+            installBtn.textContent = 'Install';
+            installBtn.className = 'notification-action';
+
+            const dismissBtn = document.createElement('button');
+            dismissBtn.textContent = 'Dismiss';
+            dismissBtn.className = 'notification-action';
+
+            notification.append(text, installBtn, dismissBtn);
             notification.classList.add('show');
 
-            document.getElementById('installBtn')?.addEventListener('click', async () => {
+            installBtn.addEventListener('click', async () => {
                 if (deferredPrompt) {
                     deferredPrompt.prompt();
                     const { outcome } = await deferredPrompt.userChoice;
@@ -1006,7 +1013,7 @@ class ReliefTimer {
                 }
             });
 
-            document.getElementById('dismissInstall')?.addEventListener('click', () => {
+            dismissBtn.addEventListener('click', () => {
                 notification.classList.remove('show');
             });
         }
@@ -1042,35 +1049,58 @@ class ReliefTimer {
     showUpdateNotification() {
         const notification = document.getElementById('notification');
         if (notification) {
-            notification.innerHTML = `
-                New version available!
-                <button id="updateBtn" style="margin-left: 10px; padding: 5px 10px; cursor: pointer;">Refresh</button>
-            `;
+            notification.textContent = '';
+
+            const text = document.createTextNode('New version available! ');
+            const updateBtn = document.createElement('button');
+            updateBtn.textContent = 'Refresh';
+            updateBtn.className = 'notification-action';
+
+            notification.append(text, updateBtn);
             notification.classList.add('show');
 
-            document.getElementById('updateBtn')?.addEventListener('click', () => {
+            updateBtn.addEventListener('click', () => {
                 window.location.reload();
             });
         }
     }
 
     setupWakeLock() {
-        if ('wakeLock' in navigator) {
-            let wakeLock = null;
-            
-            const requestWakeLock = async () => {
-                try {
-                    wakeLock = await navigator.wakeLock.request('screen');
-                } catch (error) {
-                    console.warn('Wake Lock error:', error);
-                }
-            };
-            
-            document.addEventListener('visibilitychange', () => {
-                if (document.visibilityState === 'visible' && this.state.isRunning) {
-                    requestWakeLock();
-                }
+        this.wakeLock = null;
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && this.state.isRunning) {
+                this.requestWakeLock();
+            }
+        });
+    }
+
+    /**
+     * Request a screen wake lock to prevent sleep during active timer
+     */
+    async requestWakeLock() {
+        if (!('wakeLock' in navigator)) return;
+        try {
+            this.wakeLock = await navigator.wakeLock.request('screen');
+            this.wakeLock.addEventListener('release', () => {
+                this.wakeLock = null;
             });
+        } catch (error) {
+            console.warn('Wake Lock error:', error);
+        }
+    }
+
+    /**
+     * Release the screen wake lock
+     */
+    async releaseWakeLock() {
+        if (this.wakeLock) {
+            try {
+                await this.wakeLock.release();
+            } catch (error) {
+                console.warn('Wake Lock release error:', error);
+            }
+            this.wakeLock = null;
         }
     }
 
@@ -1111,15 +1141,14 @@ class ReliefTimer {
 
         // Update goal progress if element exists
         if (this.dom.goalProgress) {
-            const today = new Date().toDateString();
-            const todaySessions = this.state.streak.lastDate === today ?
-                (this.state.sessionCount || 0) : 0;
+            const todaySessions = this.history.getSessionsForDate(new Date())
+                .filter(s => s.type === 'work').length;
             const progress = Math.min(100, (todaySessions / this.settings.dailyGoal) * 100);
             this.dom.goalProgress.style.width = `${progress}%`;
-            this.dom.goalProgress.setAttribute('aria-valuenow', progress);
+            this.dom.goalProgress.setAttribute('aria-valuenow', Math.round(progress));
 
-            // Show motivational message if goal reached
-            if (todaySessions >= this.settings.dailyGoal && todaySessions === this.state.sessionCount) {
+            // Show motivational message exactly when goal is reached
+            if (todaySessions === this.settings.dailyGoal && todaySessions === this.state.sessionCount) {
                 this.notifications.show(`Goal reached! ${this.settings.dailyGoal} sessions completed today!`);
             }
         }
@@ -1237,16 +1266,33 @@ class ReliefTimer {
     showAchievementNotification(achievement) {
         const notification = document.getElementById('notification');
         if (notification) {
-            notification.innerHTML = `
-                <div class="achievement-unlock">
-                    <div class="achievement-icon">${achievement.icon}</div>
-                    <div class="achievement-content">
-                        <div class="achievement-title">Achievement Unlocked!</div>
-                        <div class="achievement-name">${achievement.name}</div>
-                        <div class="achievement-desc">${achievement.description}</div>
-                    </div>
-                </div>
-            `;
+            notification.textContent = '';
+
+            const unlock = document.createElement('div');
+            unlock.className = 'achievement-unlock';
+
+            const iconEl = document.createElement('div');
+            iconEl.className = 'achievement-icon';
+            iconEl.textContent = achievement.icon;
+
+            const content = document.createElement('div');
+            content.className = 'achievement-content';
+
+            const title = document.createElement('div');
+            title.className = 'achievement-title';
+            title.textContent = 'Achievement Unlocked!';
+
+            const name = document.createElement('div');
+            name.className = 'achievement-name';
+            name.textContent = achievement.name;
+
+            const desc = document.createElement('div');
+            desc.className = 'achievement-desc';
+            desc.textContent = achievement.description;
+
+            content.append(title, name, desc);
+            unlock.append(iconEl, content);
+            notification.appendChild(unlock);
             notification.classList.add('show', 'achievement');
 
             // Play special achievement sound if available
@@ -1307,17 +1353,19 @@ class ReliefTimer {
             this.dom.startBtn.textContent = 'Start';
             this.dom.phase.textContent = 'Paused';
             this.dom.phase.classList.remove('active');
+            this.releaseWakeLock();
         } else {
             // Start timer
             this.state.interval = setInterval(() => this.tick(), 1000);
             this.dom.startBtn.textContent = 'Pause';
-            
+            this.requestWakeLock();
+
             if (this.state.currentPhase === 'work') {
                 this.dom.phase.textContent = 'Focus Time';
                 this.dom.phase.classList.add('active');
             }
         }
-        
+
         this.state.isRunning = !this.state.isRunning;
     }
 
@@ -1338,6 +1386,7 @@ class ReliefTimer {
         this.hideExercise();
         this.updateDisplay();
         this.updateBackgroundTheme();
+        this.releaseWakeLock();
     }
 
     /**
@@ -1371,6 +1420,32 @@ class ReliefTimer {
         if (modal) {
             modal.style.display = 'flex';
             document.body.style.overflow = 'hidden';
+
+            // Store the element that had focus before opening
+            this._previousFocus = document.activeElement;
+
+            // Focus the close button for keyboard users
+            const closeBtn = document.getElementById('closeSettings');
+            if (closeBtn) closeBtn.focus();
+
+            // Set up focus trap
+            this._trapFocus = (e) => {
+                if (e.key !== 'Tab') return;
+                const focusable = modal.querySelectorAll(
+                    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+                );
+                if (focusable.length === 0) return;
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (e.shiftKey && document.activeElement === first) {
+                    e.preventDefault();
+                    last.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                    e.preventDefault();
+                    first.focus();
+                }
+            };
+            modal.addEventListener('keydown', this._trapFocus);
         }
     }
 
@@ -1380,8 +1455,18 @@ class ReliefTimer {
     closeSettings() {
         const modal = document.getElementById('settingsModal');
         if (modal) {
+            if (this._trapFocus) {
+                modal.removeEventListener('keydown', this._trapFocus);
+                this._trapFocus = null;
+            }
             modal.style.display = 'none';
             document.body.style.overflow = '';
+
+            // Restore focus to the element that opened the modal
+            if (this._previousFocus) {
+                this._previousFocus.focus();
+                this._previousFocus = null;
+            }
         }
     }
 
@@ -1390,7 +1475,7 @@ class ReliefTimer {
      */
     createSettingsModal() {
         const modalHTML = `
-            <div id="settingsModal" class="modal">
+            <div id="settingsModal" class="modal" role="dialog" aria-modal="true" aria-label="Settings">
                 <div class="modal-content large">
                     <div class="modal-header">
                         <h2>Settings</h2>
@@ -1626,21 +1711,35 @@ class ReliefTimer {
 
         progressSpan.textContent = this.achievements.getCompletionPercentage() + '%';
 
-        container.innerHTML = '';
+        container.textContent = '';
 
         Object.values(ACHIEVEMENTS).forEach(achievement => {
             const isUnlocked = this.achievements.isUnlocked(achievement.id);
-            const achievementCard = document.createElement('div');
-            achievementCard.className = `achievement-card ${isUnlocked ? 'unlocked' : 'locked'}`;
-            achievementCard.innerHTML = `
-                <div class="achievement-icon">${achievement.icon}</div>
-                <div class="achievement-info">
-                    <div class="achievement-name">${achievement.name}</div>
-                    <div class="achievement-desc">${achievement.description}</div>
-                    ${isUnlocked ? '<div class="achievement-badge">✓ Unlocked</div>' : '<div class="achievement-badge">🔒 Locked</div>'}
-                </div>
-            `;
-            container.appendChild(achievementCard);
+            const card = document.createElement('div');
+            card.className = `achievement-card ${isUnlocked ? 'unlocked' : 'locked'}`;
+
+            const iconEl = document.createElement('div');
+            iconEl.className = 'achievement-icon';
+            iconEl.textContent = achievement.icon;
+
+            const info = document.createElement('div');
+            info.className = 'achievement-info';
+
+            const nameEl = document.createElement('div');
+            nameEl.className = 'achievement-name';
+            nameEl.textContent = achievement.name;
+
+            const descEl = document.createElement('div');
+            descEl.className = 'achievement-desc';
+            descEl.textContent = achievement.description;
+
+            const badge = document.createElement('div');
+            badge.className = 'achievement-badge';
+            badge.textContent = isUnlocked ? '✓ Unlocked' : '🔒 Locked';
+
+            info.append(nameEl, descEl, badge);
+            card.append(iconEl, info);
+            container.appendChild(card);
         });
     }
 
@@ -1654,25 +1753,44 @@ class ReliefTimer {
         const recentSessions = this.history.getRecentSessions(7);
 
         if (recentSessions.length === 0) {
-            container.innerHTML = '<p class="empty-state">No session history yet. Start a timer to begin!</p>';
+            container.textContent = '';
+            const empty = document.createElement('p');
+            empty.className = 'empty-state';
+            empty.textContent = 'No session history yet. Start a timer to begin!';
+            container.appendChild(empty);
             return;
         }
 
-        container.innerHTML = '';
+        container.textContent = '';
 
         recentSessions.forEach(session => {
             const date = new Date(session.date);
-            const sessionCard = document.createElement('div');
-            sessionCard.className = 'history-item';
-            sessionCard.innerHTML = `
-                <div class="history-icon">${session.type === 'work' ? '💼' : '☕'}</div>
-                <div class="history-info">
-                    <div class="history-type">${session.type === 'work' ? 'Work Session' : 'Break'}</div>
-                    <div class="history-date">${date.toLocaleString()}</div>
-                </div>
-                <div class="history-duration">${Math.round(session.duration / 60)} min</div>
-            `;
-            container.appendChild(sessionCard);
+            const item = document.createElement('div');
+            item.className = 'history-item';
+
+            const iconEl = document.createElement('div');
+            iconEl.className = 'history-icon';
+            iconEl.textContent = session.type === 'work' ? '💼' : '☕';
+
+            const info = document.createElement('div');
+            info.className = 'history-info';
+
+            const typeEl = document.createElement('div');
+            typeEl.className = 'history-type';
+            typeEl.textContent = session.type === 'work' ? 'Work Session' : 'Break';
+
+            const dateEl = document.createElement('div');
+            dateEl.className = 'history-date';
+            dateEl.textContent = date.toLocaleString();
+
+            info.append(typeEl, dateEl);
+
+            const duration = document.createElement('div');
+            duration.className = 'history-duration';
+            duration.textContent = `${Math.round(session.duration / 60)} min`;
+
+            item.append(iconEl, info, duration);
+            container.appendChild(item);
         });
     }
 
@@ -1690,53 +1808,84 @@ class ReliefTimer {
         const workHours = (stats.totalWork / 3600).toFixed(1);
         const breakHours = (stats.totalBreak / 3600).toFixed(1);
 
-        container.innerHTML = `
-            <div class="analytics-section">
-                <h4>Last 7 Days</h4>
-                <div class="stats-grid">
-                    <div class="stat-box">
-                        <div class="stat-number">${totalHours}h</div>
-                        <div class="stat-label">Total Time</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-number">${workHours}h</div>
-                        <div class="stat-label">Work Time</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-number">${breakHours}h</div>
-                        <div class="stat-label">Break Time</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-number">${stats.workPercentage.toFixed(0)}%</div>
-                        <div class="stat-label">Work Ratio</div>
-                    </div>
-                </div>
-            </div>
+        container.textContent = '';
 
-            <div class="analytics-section">
-                <h4>Activity by Day</h4>
-                <div class="day-chart">
-                    ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => `
-                        <div class="day-bar">
-                            <div class="bar-fill" style="height: ${Math.min(100, dayStats[i] * 10)}%"></div>
-                            <div class="bar-label">${day}</div>
-                            <div class="bar-value">${dayStats[i]}</div>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
+        // Helper to create stat box
+        const createStatBox = (number, label) => {
+            const box = document.createElement('div');
+            box.className = 'stat-box';
+            const numEl = document.createElement('div');
+            numEl.className = 'stat-number';
+            numEl.textContent = number;
+            const labelEl = document.createElement('div');
+            labelEl.className = 'stat-label';
+            labelEl.textContent = label;
+            box.append(numEl, labelEl);
+            return box;
+        };
 
-            <div class="analytics-section">
-                <h4>Quick Stats</h4>
-                <ul class="quick-stats">
-                    <li>🎯 Total Sessions: ${this.state.stats.sessions}</li>
-                    <li>🧘 Exercise Breaks: ${this.state.stats.exercises}</li>
-                    <li>🔥 Current Streak: ${this.state.streak.current} days</li>
-                    <li>👑 Longest Streak: ${this.state.streak.longest} days</li>
-                    <li>📅 Sessions Today: ${this.history.getSessionsForDate(new Date()).length}</li>
-                </ul>
-            </div>
-        `;
+        // Helper to create analytics section
+        const createSection = (title) => {
+            const section = document.createElement('div');
+            section.className = 'analytics-section';
+            const h4 = document.createElement('h4');
+            h4.textContent = title;
+            section.appendChild(h4);
+            return section;
+        };
+
+        // Last 7 Days section
+        const timeSection = createSection('Last 7 Days');
+        const statsGrid = document.createElement('div');
+        statsGrid.className = 'stats-grid';
+        statsGrid.append(
+            createStatBox(`${totalHours}h`, 'Total Time'),
+            createStatBox(`${workHours}h`, 'Work Time'),
+            createStatBox(`${breakHours}h`, 'Break Time'),
+            createStatBox(`${stats.workPercentage.toFixed(0)}%`, 'Work Ratio')
+        );
+        timeSection.appendChild(statsGrid);
+
+        // Activity by Day section
+        const daySection = createSection('Activity by Day');
+        const dayChart = document.createElement('div');
+        dayChart.className = 'day-chart';
+        ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach((day, i) => {
+            const bar = document.createElement('div');
+            bar.className = 'day-bar';
+            const fill = document.createElement('div');
+            fill.className = 'bar-fill';
+            fill.style.height = `${Math.min(100, dayStats[i] * 10)}%`;
+            const label = document.createElement('div');
+            label.className = 'bar-label';
+            label.textContent = day;
+            const value = document.createElement('div');
+            value.className = 'bar-value';
+            value.textContent = dayStats[i];
+            bar.append(fill, label, value);
+            dayChart.appendChild(bar);
+        });
+        daySection.appendChild(dayChart);
+
+        // Quick Stats section
+        const quickSection = createSection('Quick Stats');
+        const quickList = document.createElement('ul');
+        quickList.className = 'quick-stats';
+        const quickItems = [
+            `🎯 Total Sessions: ${this.state.stats.sessions}`,
+            `🧘 Exercise Breaks: ${this.state.stats.exercises}`,
+            `🔥 Current Streak: ${this.state.streak.current} days`,
+            `👑 Longest Streak: ${this.state.streak.longest} days`,
+            `📅 Sessions Today: ${this.history.getSessionsForDate(new Date()).length}`
+        ];
+        quickItems.forEach(text => {
+            const li = document.createElement('li');
+            li.textContent = text;
+            quickList.appendChild(li);
+        });
+        quickSection.appendChild(quickList);
+
+        container.append(timeSection, daySection, quickSection);
     }
 
     /**
@@ -1790,16 +1939,20 @@ class ReliefTimer {
         this.settings.notificationsEnabled = document.getElementById('notificationsEnabled').checked;
         this.settings.autoStartBreaks = document.getElementById('autoStartBreaks').checked;
         this.settings.autoStartWork = document.getElementById('autoStartWork').checked;
-        this.settings.dailyGoal = parseInt(document.getElementById('dailyGoal').value);
+        this.settings.dailyGoal = Math.max(1, parseInt(document.getElementById('dailyGoal').value, 10) || 8);
 
         // Save custom timer values
         if (this.settings.profile === 'custom') {
+            const clampMinutes = (id, min, max, fallback) => {
+                const val = parseInt(document.getElementById(id).value, 10);
+                return (isNaN(val) ? fallback : Math.max(min, Math.min(max, val))) * 60;
+            };
             this.settings.customTimes = {
                 name: 'Custom',
-                workTime: parseInt(document.getElementById('customWorkTime').value) * 60,
-                microBreak: parseInt(document.getElementById('customMicroBreak').value) * 60,
-                exerciseBreak: parseInt(document.getElementById('customExerciseBreak').value) * 60,
-                longBreak: parseInt(document.getElementById('customLongBreak').value) * 60
+                workTime: clampMinutes('customWorkTime', 1, 120, 25),
+                microBreak: clampMinutes('customMicroBreak', 1, 30, 2),
+                exerciseBreak: clampMinutes('customExerciseBreak', 1, 60, 5),
+                longBreak: clampMinutes('customLongBreak', 1, 60, 15)
             };
         }
 
